@@ -1,11 +1,17 @@
 import os
 import torch
+import warnings
 
-# [1단계] PyTorch 2.6+ 보안 정책(WeightsUnpickler) 대응 설정
-# 이 부분은 모든 import 중 가장 최상단에 위치해야 합니다.
+# [1단계] 모든 보안 경고 및 검사 강제 비활성화
+# PyTorch 2.6+의 Pickle 로드 보안 정책을 우회하기 위한 최우선 설정입니다.
+os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
+warnings.filterwarnings("ignore")
+
 try:
     import ultralytics
-    # 에러 로그에서 지목한 모든 클래스를 '안전한 클래스'로 등록합니다.
+    import collections
+    
+    # 보안 정책 대응을 위한 안전 리스트 등록
     if hasattr(torch.serialization, 'add_safe_globals'):
         from ultralytics.nn.tasks import DetectionModel
         from ultralytics.nn.modules.conv import Conv
@@ -14,7 +20,7 @@ try:
         
         torch.serialization.add_safe_globals([
             DetectionModel, Conv, C2f, Bottleneck, SPPF, Detect,
-            torch.nn.modules.pooling.MaxPool2d,      # <--- 방금 에러의 범인!
+            torch.nn.modules.pooling.MaxPool2d,
             torch.nn.modules.container.Sequential,
             torch.nn.modules.container.ModuleList,
             torch.nn.modules.conv.Conv2d,
@@ -24,11 +30,9 @@ try:
             torch.nn.modules.upsampling.Upsample,
             torch.storage._load_from_bytes,
             torch._utils._rebuild_tensor_v2,
-            torch.Size
+            torch.Size,
+            collections.OrderedDict
         ])
-    
-    # 이중 안전장치: 환경 변수를 통해 가중치 전용 로드 강제 해제
-    os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
 except Exception as e:
     print(f"⚠️ 초기 보안 설정 중 참고: {e}")
 
@@ -39,18 +43,32 @@ import tempfile
 
 app = Flask(__name__)
 
-# 경로 및 모델 설정
+# 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEIGHT = os.path.join(BASE_DIR, "best.pt")
 
-# [2단계] 모델 로드 실행
+# [2단계] 모델 로드 실행 (들여쓰기 오류 수정 완료)
 model = None
 try:
-    # 위에서 설정한 add_safe_globals 덕분에 이제 정상 로드됩니다.
+    # A. 표준 방식으로 우선 시도
     model = YOLO(WEIGHT)
-    print("✅ 모델 로드 성공!")
+    print("✅✅ 모델 로드 성공!")
 except Exception as e:
-    print(f"❌ 모델 로드 최종 실패: {e}")
+    print(f"⚠️ 표준 로드 실패, 보안 강제 해제 시도 중: {e}")
+    try:
+        # B. 최후의 수단: weights_only=False로 강제 로드
+        # 중첩된 try-except문의 들여쓰기를 정확히 맞췄습니다.
+        ckpt = torch.load(WEIGHT, map_location='cpu', weights_only=False)
+        model = YOLO(WEIGHT)
+        
+        # 모델 객체에 가중치 수동 주입
+        if isinstance(ckpt, dict) and 'model' in ckpt:
+            state_dict = ckpt['model'].state_dict() if hasattr(ckpt['model'], 'state_dict') else ckpt['model']
+            model.model.load_state_dict(state_dict)
+        
+        print("✅✅ [최종] 보안 해제 강제 로드 성공!")
+    except Exception as final_e:
+        print(f"❌ 모델 로드 최종 실패: {final_e}")
 
 # 분리 배출 데이터 가이드
 DISPOSAL = {
@@ -82,23 +100,19 @@ def analyze_image():
     temp_path = None
 
     try:
-        # 1. 임시 파일로 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
             image_file.save(temp.name)
             temp_path = temp.name
         
-        # 2. 이미지 읽기 및 분석
         img = cv2.imread(temp_path)
         if img is None:
             return jsonify({"error": "이미지 읽기 실패"}), 400
 
         results = model(img, verbose=False)
         
-        # 3. 결과 처리
         if not results or len(results[0].boxes) == 0:
             return jsonify({"error": "감지된 쓰레기 객체가 없습니다."}), 400
 
-        # 가장 확률(Confidence)이 높은 결과 추출
         best = max(results[0].boxes, key=lambda b: float(b.conf[0]))
         category = model.names[int(best.cls[0])]
         
@@ -111,11 +125,10 @@ def analyze_image():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        # 4. 임시 파일 삭제
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
 if __name__ == "__main__":
-    # Render 환경의 PORT 대응
-    port = int(os.environ.get("PORT", 5000))
+    # Render 환경의 포트 바인딩 (기본 10000)
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
