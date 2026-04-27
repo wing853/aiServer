@@ -1,40 +1,24 @@
 import os
 import torch
 import warnings
+import collections
 
-# [1단계] 모든 보안 경고 및 검사 강제 비활성화
-# PyTorch 2.6+의 Pickle 로드 보안 정책을 우회하기 위한 최우선 설정입니다.
+# [1단계] 최우선 보안 및 환경 설정
 os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
 warnings.filterwarnings("ignore")
 
 try:
     import ultralytics
-    import collections
-    
-    # 보안 정책 대응을 위한 안전 리스트 등록
+    # 가중치 데이터(state_dict) 로드 시 필요한 필수 클래스 허용
     if hasattr(torch.serialization, 'add_safe_globals'):
-        from ultralytics.nn.tasks import DetectionModel
-        from ultralytics.nn.modules.conv import Conv
-        from ultralytics.nn.modules.block import C2f, Bottleneck, SPPF
-        from ultralytics.nn.modules.head import Detect
-        
         torch.serialization.add_safe_globals([
-            DetectionModel, Conv, C2f, Bottleneck, SPPF, Detect,
-            torch.nn.modules.pooling.MaxPool2d,
-            torch.nn.modules.container.Sequential,
-            torch.nn.modules.container.ModuleList,
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.batchnorm.BatchNorm2d,
-            torch.nn.modules.activation.SiLU,
-            torch.nn.modules.activation.LeakyReLU,
-            torch.nn.modules.upsampling.Upsample,
-            torch.storage._load_from_bytes,
-            torch._utils._rebuild_tensor_v2,
+            collections.OrderedDict,
             torch.Size,
-            collections.OrderedDict
+            torch._utils._rebuild_tensor_v2,
+            torch.storage._load_from_bytes
         ])
 except Exception as e:
-    print(f"⚠️ 초기 보안 설정 중 참고: {e}")
+    print(f"⚠️ 초기 설정 참고: {e}")
 
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
@@ -44,34 +28,44 @@ import tempfile
 app = Flask(__name__)
 
 # 경로 설정
-# 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 로컬에서 새롭게 저장해서 올릴 파일명입니다.
+# 로컬에서 가중치만 추출해서 저장한 새 파일명
 WEIGHT_FIX = os.path.join(BASE_DIR, "best_fix.pt")
-# 백업용 원본 파일 경로
+# 원본 파일명 (백업용)
 WEIGHT_ORIGIN = os.path.join(BASE_DIR, "best.pt")
-# [2단계] 모델 로드 실행 (들여쓰기 오류 수정 완료)
+
 model = None
-try:
-    # A. 표준 방식으로 우선 시도
-    model = YOLO(WEIGHT)
-    print("✅✅ 모델 로드 성공!")
-except Exception as e:
-    print(f"⚠️ 표준 로드 실패, 보안 강제 해제 시도 중: {e}")
+
+def load_model_strategy():
+    global model
     try:
-        # B. 최후의 수단: weights_only=False로 강제 로드
-        # 중첩된 try-except문의 들여쓰기를 정확히 맞췄습니다.
-        ckpt = torch.load(WEIGHT, map_location='cpu', weights_only=False)
-        model = YOLO(WEIGHT)
+        if os.path.exists(WEIGHT_FIX):
+            print(f"🔄 {WEIGHT_FIX}를 발견했습니다. 가중치 주입 방식을 시작합니다.")
+            # 1. 기본 모델 구조를 먼저 생성 (yolov8n.pt는 ultralytics가 자동 다운로드함)
+            model = YOLO('yolov8n.pt') 
+            
+            # 2. 가중치 데이터만 강제로 로드
+            state_dict = torch.load(WEIGHT_FIX, map_location='cpu', weights_only=False)
+            
+            # 3. 가중치 추출 (dict 형태인 경우 대응)
+            if isinstance(state_dict, dict) and 'model' in state_dict:
+                state_dict = state_dict['model'].state_dict() if hasattr(state_dict['model'], 'state_dict') else state_dict['model']
+            
+            # 4. 모델에 가중치 덮어씌우기
+            model.model.load_state_dict(state_dict, strict=False)
+            print("✅✅ [성공] 가중치 수동 주입 완료!")
         
-        # 모델 객체에 가중치 수동 주입
-        if isinstance(ckpt, dict) and 'model' in ckpt:
-            state_dict = ckpt['model'].state_dict() if hasattr(ckpt['model'], 'state_dict') else ckpt['model']
-            model.model.load_state_dict(state_dict)
-        
-        print("✅✅ [최종] 보안 해제 강제 로드 성공!")
-    except Exception as final_e:
-        print(f"❌ 모델 로드 최종 실패: {final_e}")
+        else:
+            print(f"⚠️ {WEIGHT_FIX}가 없습니다. 기존 방식으로 {WEIGHT_ORIGIN} 로드를 시도합니다.")
+            model = YOLO(WEIGHT_ORIGIN)
+            print("✅✅ [성공] 원본 모델 로드 완료!")
+
+    except Exception as e:
+        print(f"❌ 모델 로드 최종 실패: {e}")
+        model = None
+
+# 서버 기동 시 로드 실행
+load_model_strategy()
 
 # 분리 배출 데이터 가이드
 DISPOSAL = {
@@ -89,7 +83,8 @@ def health():
     if model:
         return "✅ AI Server is Live and Model is Loaded!"
     else:
-        return "⚠️ AI Server is Live but Model Load Failed."
+        load_model_strategy() # 실패 상태라면 접속 시 재시도
+        return "⚠️ AI Server is Live but Model Load Failed. Retrying..."
 
 @app.route("/recycle/analyze", methods=["POST"])
 def analyze_image():
@@ -132,6 +127,6 @@ def analyze_image():
             os.remove(temp_path)
 
 if __name__ == "__main__":
-    # Render 환경의 포트 바인딩 (기본 10000)
+    # Render 환경의 PORT 대응 (기본 10000)
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
