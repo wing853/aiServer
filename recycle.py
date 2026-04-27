@@ -44,9 +44,12 @@ import tempfile
 app = Flask(__name__)
 
 # 경로 설정
+# 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WEIGHT = os.path.join(BASE_DIR, "best.pt")
-
+# 로컬에서 새롭게 저장해서 올릴 파일명입니다.
+WEIGHT_FIX = os.path.join(BASE_DIR, "best_fix.pt")
+# 백업용 원본 파일 경로
+WEIGHT_ORIGIN = os.path.join(BASE_DIR, "best.pt")
 # [2단계] 모델 로드 실행 (들여쓰기 오류 수정 완료)
 model = None
 try:
