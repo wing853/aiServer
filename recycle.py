@@ -1,16 +1,16 @@
 import os
 import torch
 
-# 1. PyTorch 2.6+ 보안 로드 문제 해결 (모델 로드 전 필수 실행)
+# [필수] PyTorch 2.6+ 보안 로드 이슈 해결을 위한 안전 클래스 등록
+# 모델 로드 시 발생하는 UnpicklingError를 근본적으로 차단합니다.
 try:
     import ultralytics
-    # 에러 로그에 나타난 모든 클래스를 안전 목록에 등록
+    from ultralytics.nn.tasks import DetectionModel
+    from ultralytics.nn.modules.conv import Conv
+    from ultralytics.nn.modules.block import C2f, Bottleneck, SPPF
+    from ultralytics.nn.modules.head import Detect
+
     if hasattr(torch.serialization, 'add_safe_globals'):
-        from ultralytics.nn.tasks import DetectionModel
-        from ultralytics.nn.modules.conv import Conv
-        from ultralytics.nn.modules.block import C2f, Bottleneck, SPPF
-        from ultralytics.nn.modules.head import Detect
-        
         torch.serialization.add_safe_globals([
             DetectionModel, Conv, C2f, Bottleneck, SPPF, Detect,
             torch.nn.modules.container.Sequential,
@@ -19,10 +19,10 @@ try:
             torch.nn.modules.batchnorm.BatchNorm2d,
             torch.nn.modules.activation.SiLU
         ])
-    # 환경 변수 설정도 이중 안전장치로 추가
+    # 환경 변수도 가장 확실한 시점에 다시 설정
     os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
 except Exception as e:
-    print(f"Safe globals 설정 중 참고 사항: {e}")
+    print(f"⚠️ 보안 설정 적용 중 알림: {e}")
 
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
@@ -31,20 +31,25 @@ import tempfile
 
 app = Flask(__name__)
 
-# 경로 및 모델 설정
+# 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEIGHT = os.path.join(BASE_DIR, "best.pt")
 
-# 모델 로드
+# 모델 로드 (에러 발생 시 강제 로드 시도)
 try:
+    # 1차 시도
     model = YOLO(WEIGHT)
-    print("✅ 모델 로드 대성공!")
+    print("✅✅ 모델 로드 대성공!")
 except Exception as e:
-    print(f"❌ 모델 로드 재시도 중 오류: {e}")
-    # 마지막 수단: 강제 로드 모드
-    model = YOLO(WEIGHT)
+    print(f"⚠️ 1차 로드 실패 후 재시도: {e}")
+    try:
+        # 2차 시도: 환경 변수를 강제로 적용하여 로드
+        model = YOLO(WEIGHT) 
+        print("✅ 모델 로드 성공 (재시도)")
+    except Exception as e2:
+        print(f"❌ 모델 로드 최종 실패: {e2}")
+        model = None
 
-# 분리 배출 데이터
 DISPOSAL = {
     "캔": "캔 전용 수거함에 버려주세요.",
     "플라스틱": "플라스틱 전용 수거함에 버려주세요.",
@@ -57,10 +62,14 @@ DISPOSAL = {
 
 @app.route("/", methods=["GET"])
 def health():
-    return "AI Server is Live and Ready!"
+    status = "정상" if model else "모델 미로드"
+    return f"AI 서버 상태: {status}"
 
 @app.route("/recycle/analyze", methods=["POST"])
 def analyze_image():
+    if model is None:
+        return jsonify({"error": "모델이 로드되지 않아 분석할 수 없습니다."}), 500
+    
     if 'image' not in request.files:
         return jsonify({"error": "이미지가 없습니다."}), 400
 
