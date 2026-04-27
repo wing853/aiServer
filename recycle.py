@@ -19,7 +19,12 @@ try:
             torch.nn.modules.container.ModuleList,
             torch.nn.modules.conv.Conv2d,
             torch.nn.modules.batchnorm.BatchNorm2d,
-            torch.nn.modules.activation.SiLU
+            torch.nn.modules.activation.SiLU,
+            torch.nn.modules.activation.LeakyReLU,
+            torch.nn.modules.upsampling.Upsample,
+            torch.storage._load_from_bytes,
+            torch._utils._rebuild_tensor_v2,
+            torch.Size
         ])
     
     # 이중 안전장치: 환경 변수를 통해 가중치 전용 로드 강제 해제
