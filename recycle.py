@@ -8,14 +8,25 @@ os.environ["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
 warnings.filterwarnings("ignore")
 
 try:
-    import ultralytics
-    # 가중치 데이터(state_dict) 로드 시 필요한 필수 클래스 허용
     if hasattr(torch.serialization, 'add_safe_globals'):
+        # YOLO 내부에서 사용하는 모든 핵심 클래스를 명시적으로 허용
+        from ultralytics.nn.tasks import DetectionModel
+        from ultralytics.nn.modules import Conv, C2f, Bottleneck, SPPF, Detect
+        
         torch.serialization.add_safe_globals([
-            collections.OrderedDict,
-            torch.Size,
+            DetectionModel, Conv, C2f, Bottleneck, SPPF, Detect,
+            torch.nn.modules.pooling.MaxPool2d,
+            torch.nn.modules.container.Sequential,
+            torch.nn.modules.container.ModuleList,
+            torch.nn.modules.conv.Conv2d,
+            torch.nn.modules.batchnorm.BatchNorm2d,
+            torch.nn.modules.activation.SiLU,
+            torch.nn.modules.activation.LeakyReLU,
+            torch.nn.modules.upsampling.Upsample,
+            torch.storage._load_from_bytes,
             torch._utils._rebuild_tensor_v2,
-            torch.storage._load_from_bytes
+            torch.Size,
+            collections.OrderedDict
         ])
 except Exception as e:
     print(f"⚠️ 초기 설정 참고: {e}")
