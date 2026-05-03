@@ -1,8 +1,8 @@
-# requirements.txt 수정 제안
 --index-url https://download.pytorch.org/whl/cpu
 torch==2.4.1
 torchvision==0.19.1
-ultralytics==8.0.133
+--extra-index-url https://pypi.org/simple
+ultralytics
 Flask==2.3.2
 opencv-python-headless==4.8.1.78
 PyJWT==2.7.0
