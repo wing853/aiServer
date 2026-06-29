@@ -32,16 +32,22 @@
 
 ## 📡 API
 
+### 헬스 체크
+```
+GET /
+Response: "✅ AI Server is Live and Model is Loaded!"
+```
+
 ### 이미지 분석
 ```
-POST /analyze
+POST /recycle/analyze
 Content-Type: multipart/form-data
 
 Request: image (file)
 Response: {
   "category": "페트병",
-  "confidence": 0.95,
-  "disposal_info": "분리배출 안내 내용"
+  "confidence": 0.9500,
+  "disposal_method": "페트병 전용 수거함에 버려주세요."
 }
 ```
 
