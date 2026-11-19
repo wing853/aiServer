@@ -14,7 +14,6 @@
 |:---:|:---:|
 | Server | Flask, Python |
 | AI Model | YOLOv8n-seg |
-| Fallback | Gemini Vision API |
 | Deploy | Railway, Docker |
 
 <br>
@@ -57,7 +56,6 @@ Response: {
 
 - **모델 Fallback 전략**: `best_fix.pt` 우선 로드 → 실패 시 `best.pt`로 fallback
 - **Lazy Loading**: 전역 모델 인스턴스를 lazy loading 방식으로 관리하여 서버 시작 시 불필요한 로드 방지
-- **신뢰도 기반 폴백**: YOLO 신뢰도가 낮을 경우 Gemini Vision API로 폴백하여 일관된 응답 품질 보장
 - **임시 파일 처리**: 이미지 분석 후 임시 파일 자동 삭제
 
 <br>
