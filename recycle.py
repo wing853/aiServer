@@ -58,7 +58,7 @@ DISPOSAL = {
 def index():
     if request.method == "POST":
         return analyze_image()
-    return "✅ AI Server is Live (Render)"
+    return "✅ AI Server is Live"
 
 # 🔍 이미지 분석 API
 @app.route("/recycle/analyze", methods=["POST"])
@@ -117,5 +117,5 @@ def analyze_image():
                 pass
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
