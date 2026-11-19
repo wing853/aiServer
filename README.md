@@ -4,7 +4,7 @@
 > YOLO 기반 객체 인식 모델을 Flask 서버로 제공
 
 - 🔗 **메인 레포**: [https://github.com/wing853/recycle](https://github.com/wing853/recycle)
-- 🌐 **배포 링크**: [https://aiserver-1-cpjb.onrender.com](https://aiserver-1-cpjb.onrender.com)
+- 🌐 **배포 링크**: [https://aiserver-production-c9941db2.up.railway.app](https://aiserver-production-c9941db2.up.railway.app)
 
 <br>
 
@@ -15,7 +15,7 @@
 | Server | Flask, Python |
 | AI Model | YOLOv8n-seg |
 | Fallback | Gemini Vision API |
-| Deploy | Render, Docker |
+| Deploy | Railway, Docker |
 
 <br>
 
